@@ -40,9 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
     scrollToBottom();
   }
 
-  function scrollToBottom() { chatDisplay.scrollTop = chatDisplay.scrollHeight; }
+  function scrollToBottom() { 
+    chatDisplay.scrollTop = chatDisplay.scrollHeight; 
+  }
 
-  function setAIStatus(status,message,showIndicator=true){
+  function setAIStatus(status, message, showIndicator=true){
     aiStatusIndicator.className='status-indicator';
     if(showIndicator) aiStatusIndicator.classList.add(status);
     statusMessage.textContent = message;
@@ -70,41 +72,40 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- AI RESPONSE (BACKEND CALL) ---
-   // --- AI RESPONSE (BACKEND CALL) ---
-async function getAIResponse(payload, isAudio=false){
+  async function getAIResponse(payload, isAudio=false){
     setAIStatus('thinking','Aetheria is thinking...',true);
     showTypingIndicator();
 
     try {
-        let res;
-        if(isAudio){
-            // For audio - already FormData
-            res = await fetch(`${BACKEND_URL}/ai-response`, {
-                method: 'POST',
-                body: payload // FormData with audio
-            });
-        } else {
-            // For text - use FormData instead of JSON
-            const formData = new FormData();
-            formData.append('prompt', payload);
-            
-            res = await fetch(`${BACKEND_URL}/ai-response`, {
-                method: 'POST',
-                body: formData // NO Content-Type header - browser sets it automatically
-            });
-        }
+      let res;
+      if(isAudio){
+        // For audio - already FormData
+        res = await fetch(`${BACKEND_URL}/ai-response`, {
+          method: 'POST',
+          body: payload // FormData with audio
+        });
+      } else {
+        // For text - use FormData instead of JSON
+        const formData = new FormData();
+        formData.append('prompt', payload);
+        
+        res = await fetch(`${BACKEND_URL}/ai-response`, {
+          method: 'POST',
+          body: formData // NO Content-Type header - browser sets it automatically
+        });
+      }
 
-        const data = await res.json();
-        removeTypingIndicator();
-        setAIStatus('online','Online',true);
-        return data.response || "Sorry, I couldn't generate a response.";
+      const data = await res.json();
+      removeTypingIndicator();
+      setAIStatus('online','Online',true);
+      return data.response || "Sorry, I couldn't generate a response.";
     } catch(err) {
-        console.error(err);
-        removeTypingIndicator();
-        setAIStatus('offline','Backend error',true);
-        return "Error connecting to backend. Please try again later.";
+      console.error(err);
+      removeTypingIndicator();
+      setAIStatus('offline','Backend error',true);
+      return "Error connecting to backend. Please try again later.";
     }
-}
+  }
 
   // --- SEND TEXT MESSAGE ---
   async function sendMessage() {
@@ -125,99 +126,93 @@ async function getAIResponse(payload, isAudio=false){
     }
   });
 
-   suggestionBtns.forEach(button => {
+  suggestionBtns.forEach(button => {
     button.addEventListener('click', async () => {
-        const prompt = button.dataset.prompt;
-        addMessage('user', prompt, 'user');
-        userInput.value = '';
-        const aiResponse = await getAIResponse(prompt, false); // false = text message
-        addMessage('ai', aiResponse, 'ai');
+      const prompt = button.dataset.prompt;
+      addMessage('user', prompt, 'user');
+      userInput.value = '';
+      const aiResponse = await getAIResponse(prompt, false); // false = text message
+      addMessage('ai', aiResponse, 'ai');
     });
-});
+  });
 
   // --- VOICE INPUT (RECORD + SEND) ---
- // --- VOICE INPUT (RECORD + SEND) ---
-let mediaRecorder;
-let audioChunks = [];
+  let mediaRecorder;
+  let audioChunks = [];
 
-voiceBtn.addEventListener('click', async () => {
+  voiceBtn.addEventListener('click', async () => {
     if(mediaRecorder && mediaRecorder.state === 'recording'){
-        mediaRecorder.stop();
-        voiceBtn.classList.remove('recording');
-        statusMessage.textContent = "Processing audio...";
-        return;
+      mediaRecorder.stop();
+      voiceBtn.classList.remove('recording');
+      statusMessage.textContent = "Processing audio...";
+      return;
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true
-            } 
-        });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      
+      // Use default mimeType for better compatibility
+      mediaRecorder = new MediaRecorder(stream);
+      
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) {
+          audioChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstart = () => {
+        voiceBtn.classList.add('recording');
+        statusMessage.textContent = "Recording... Click to stop";
+      };
+
+      mediaRecorder.onstop = async () => {
+        voiceBtn.classList.remove('recording');
         
-        mediaRecorder = new MediaRecorder(stream, {
-            mimeType: 'audio/webm;codecs=opus' // Use webm format for better compatibility
-        });
-        
-        audioChunks = [];
+        try {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'voice.wav');
 
-        mediaRecorder.ondataavailable = e => {
-            if (e.data.size > 0) {
-                audioChunks.push(e.data);
-            }
-        };
+          statusMessage.textContent = "Processing audio...";
+          
+          const aiResponse = await getAIResponse(formData, true);
+          addMessage('user', '[Voice Message]', 'user');
+          addMessage('ai', aiResponse, 'ai');
+          
+        } catch (error) {
+          console.error('Voice processing error:', error);
+          addMessage('ai', "Sorry, I couldn't process your audio. Please try again or use text.", 'ai');
+        } finally {
+          statusMessage.textContent = "Online";
+          // Clean up
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
 
-        mediaRecorder.onstart = () => {
-            voiceBtn.classList.add('recording');
-            statusMessage.textContent = "Recording... Click to stop";
-        };
-
-        mediaRecorder.onstop = async () => {
-            voiceBtn.classList.remove('recording');
-            
-            try {
-                // Convert to WAV format for better backend compatibility
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'recording.webm');
-
-                statusMessage.textContent = "Processing audio...";
-                
-                const aiResponse = await getAIResponse(formData, true);
-                addMessage('user', '[Voice Message]', 'user');
-                addMessage('ai', aiResponse, 'ai');
-                
-            } catch (error) {
-                console.error('Voice processing error:', error);
-                addMessage('ai', "Sorry, I couldn't process your audio. Please try again or use text.", 'ai');
-            } finally {
-                statusMessage.textContent = "Online";
-                // Clean up
-                stream.getTracks().forEach(track => track.stop());
-            }
-        };
-
-        mediaRecorder.start();
-        
-        // Auto-stop after 10 seconds to prevent long recordings
-        setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                voiceBtn.classList.remove('recording');
-            }
-        }, 10000);
-        
+      mediaRecorder.start();
+      
+      // Auto-stop after 10 seconds to prevent long recordings
+      setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          voiceBtn.classList.remove('recording');
+        }
+      }, 10000);
+      
     } catch (error) {
-        console.error('Microphone access error:', error);
-        statusMessage.textContent = "Microphone access denied";
-        addMessage('ai', "Please allow microphone access to use voice features.", 'ai');
+      console.error('Microphone access error:', error);
+      statusMessage.textContent = "Microphone access denied";
+      addMessage('ai', "Please allow microphone access to use voice features.", 'ai');
     }
-}); // REMOVED THE EXTRA }); AND DUPLICATE mediaRecorder.start()
-
-    mediaRecorder.start();
   });
 
   // --- UPTIME ---
@@ -242,3 +237,4 @@ voiceBtn.addEventListener('click', async () => {
     userInput.style.height = 'auto';
     userInput.style.height = userInput.scrollHeight + 'px';
   });
+});
