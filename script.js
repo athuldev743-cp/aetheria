@@ -70,36 +70,41 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- AI RESPONSE (BACKEND CALL) ---
-  async function getAIResponse(payload, isAudio=false){
+   // --- AI RESPONSE (BACKEND CALL) ---
+async function getAIResponse(payload, isAudio=false){
     setAIStatus('thinking','Aetheria is thinking...',true);
     showTypingIndicator();
 
     try {
-      let res;
-      if(isAudio){
-        res = await fetch(`${BACKEND_URL}/ai-response`, {
-          method: 'POST',
-          body: payload // FormData with audio
-        });
-      } else {
-        res = await fetch(`${BACKEND_URL}/ai-response`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: payload })
-        });
-      }
+        let res;
+        if(isAudio){
+            // For audio - already FormData
+            res = await fetch(`${BACKEND_URL}/ai-response`, {
+                method: 'POST',
+                body: payload // FormData with audio
+            });
+        } else {
+            // For text - use FormData instead of JSON
+            const formData = new FormData();
+            formData.append('prompt', payload);
+            
+            res = await fetch(`${BACKEND_URL}/ai-response`, {
+                method: 'POST',
+                body: formData // NO Content-Type header - browser sets it automatically
+            });
+        }
 
-      const data = await res.json();
-      removeTypingIndicator();
-      setAIStatus('online','Online',true);
-      return data.response || "Sorry, I couldn't generate a response.";
+        const data = await res.json();
+        removeTypingIndicator();
+        setAIStatus('online','Online',true);
+        return data.response || "Sorry, I couldn't generate a response.";
     } catch(err) {
-      console.error(err);
-      removeTypingIndicator();
-      setAIStatus('offline','Backend error',true);
-      return "Error connecting to backend. Please try again later.";
+        console.error(err);
+        removeTypingIndicator();
+        setAIStatus('offline','Backend error',true);
+        return "Error connecting to backend. Please try again later.";
     }
-  }
+}
 
   // --- SEND TEXT MESSAGE ---
   async function sendMessage() {
@@ -120,15 +125,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  suggestionBtns.forEach(button => {
+   suggestionBtns.forEach(button => {
     button.addEventListener('click', async () => {
-      const prompt = button.dataset.prompt;
-      addMessage('user', prompt, 'user');
-      userInput.value = '';
-      const aiResponse = await getAIResponse(prompt, false);
-      addMessage('ai', aiResponse, 'ai');
+        const prompt = button.dataset.prompt;
+        addMessage('user', prompt, 'user');
+        userInput.value = '';
+        const aiResponse = await getAIResponse(prompt, false); // false = text message
+        addMessage('ai', aiResponse, 'ai');
     });
-  });
+});
 
   // --- VOICE INPUT (RECORD + SEND) ---
   let mediaRecorder;
