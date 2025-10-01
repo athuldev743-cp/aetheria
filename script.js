@@ -136,40 +136,86 @@ async function getAIResponse(payload, isAudio=false){
 });
 
   // --- VOICE INPUT (RECORD + SEND) ---
-  let mediaRecorder;
-  let audioChunks = [];
+ // --- VOICE INPUT (RECORD + SEND) ---
+let mediaRecorder;
+let audioChunks = [];
 
-  voiceBtn.addEventListener('click', async () => {
+voiceBtn.addEventListener('click', async () => {
     if(mediaRecorder && mediaRecorder.state === 'recording'){
-      mediaRecorder.stop();
-      voiceBtn.classList.remove('recording');
-      statusMessage.textContent = "Processing audio...";
-      return;
+        mediaRecorder.stop();
+        voiceBtn.classList.remove('recording');
+        statusMessage.textContent = "Processing audio...";
+        return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true
+            } 
+        });
+        
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm;codecs=opus' // Use webm format for better compatibility
+        });
+        
+        audioChunks = [];
 
-    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) {
+                audioChunks.push(e.data);
+            }
+        };
 
-    mediaRecorder.onstart = () => {
-      voiceBtn.classList.add('recording');
-      statusMessage.textContent = "Recording...";
-    };
+        mediaRecorder.onstart = () => {
+            voiceBtn.classList.add('recording');
+            statusMessage.textContent = "Recording... Click to stop";
+        };
 
-    mediaRecorder.onstop = async () => {
-      voiceBtn.classList.remove('recording');
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'voice.wav');
+        mediaRecorder.onstop = async () => {
+            voiceBtn.classList.remove('recording');
+            
+            try {
+                // Convert to WAV format for better backend compatibility
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
 
-      // Send audio to backend
-      const aiResponse = await getAIResponse(formData, true);
-      addMessage('user', '[Voice Message]', 'user');
-      addMessage('ai', aiResponse, 'ai');
-      statusMessage.textContent = "Online";
-    };
+                statusMessage.textContent = "Processing audio...";
+                
+                const aiResponse = await getAIResponse(formData, true);
+                addMessage('user', '[Voice Message]', 'user');
+                addMessage('ai', aiResponse, 'ai');
+                
+            } catch (error) {
+                console.error('Voice processing error:', error);
+                addMessage('ai', "Sorry, I couldn't process your audio. Please try again or use text.", 'ai');
+            } finally {
+                statusMessage.textContent = "Online";
+                // Clean up
+                stream.getTracks().forEach(track => track.stop());
+            }
+        };
+
+        mediaRecorder.start();
+        
+        // Auto-stop after 10 seconds to prevent long recordings
+        setTimeout(() => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                voiceBtn.classList.remove('recording');
+            }
+        }, 10000);
+        
+    } catch (error) {
+        console.error('Microphone access error:', error);
+        statusMessage.textContent = "Microphone access denied";
+        addMessage('ai', "Please allow microphone access to use voice features.", 'ai');
+    }
+}); // REMOVED THE EXTRA }); AND DUPLICATE mediaRecorder.start()
 
     mediaRecorder.start();
   });
@@ -196,4 +242,3 @@ async function getAIResponse(payload, isAudio=false){
     userInput.style.height = 'auto';
     userInput.style.height = userInput.scrollHeight + 'px';
   });
-});
