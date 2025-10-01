@@ -72,27 +72,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- AI RESPONSE (BACKEND CALL) ---
- async function getAIResponse(payload, isAudio=false){
+async function getAIResponse(payload, isAudio=false){
     setAIStatus('thinking','Aetheria is thinking...',true);
     showTypingIndicator();
 
     try {
         let res;
         if(isAudio){
-            // For audio - already FormData
-            console.log('Sending AUDIO request - FormData:', payload);
-            console.log('Audio file details:', payload.get('audio'));
+            console.log('🔊 Sending AUDIO request');
+            console.log('Audio payload type:', typeof payload);
+            console.log('Is FormData:', payload instanceof FormData);
+            
+            // Check what's in the FormData
+            if (payload instanceof FormData) {
+                for (let pair of payload.entries()) {
+                    console.log('FormData entry:', pair[0], pair[1]);
+                }
+            }
             
             res = await fetch(`${BACKEND_URL}/ai-response`, {
                 method: 'POST',
-                body: payload // FormData with audio
+                body: payload
             });
         } else {
-            // For text - use FormData instead of JSON
             const formData = new FormData();
             formData.append('prompt', payload);
-            
-            console.log('Sending TEXT request - prompt:', payload);
+            console.log('📝 Sending TEXT request - prompt:', payload);
             
             res = await fetch(`${BACKEND_URL}/ai-response`, {
                 method: 'POST',
@@ -101,20 +106,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         console.log('Response status:', res.status);
+        console.log('Response headers:', res.headers);
         
         if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
+            let errorDetail = `HTTP error! status: ${res.status}`;
+            try {
+                const errorData = await res.json();
+                console.log('Error response data:', errorData);
+                errorDetail += ` - ${errorData.detail || JSON.stringify(errorData)}`;
+            } catch (e) {
+                const errorText = await res.text();
+                console.log('Error response text:', errorText);
+                errorDetail += ` - ${errorText}`;
+            }
+            throw new Error(errorDetail);
         }
 
         const data = await res.json();
         removeTypingIndicator();
         setAIStatus('online','Online',true);
-        return data.response || "Sorry, I couldn't generate a response.";
+        return data.response;
+
     } catch(err) {
-        console.error('API Error:', err);
+        console.error('❌ API Error:', err);
         removeTypingIndicator();
         setAIStatus('offline','Backend error',true);
-        return "Error connecting to backend. Please try again later.";
+        return `Error: ${err.message}`;
     }
 }
 
@@ -149,37 +166,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- VOICE INPUT (RECORD + SEND) ---
   // --- VOICE INPUT (RECORD + SEND) ---
+// --- VOICE INPUT (RECORD + SEND) ---
 let mediaRecorder;
 let audioChunks = [];
 
 voiceBtn.addEventListener('click', async () => {
-    if(mediaRecorder && mediaRecorder.state === 'recording'){
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         voiceBtn.classList.remove('recording');
-        statusMessage.textContent = "Processing audio...";
         return;
     }
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
-        // Try to use a more compatible format
-        const options = { 
-            audioBitsPerSecond: 128000,
-            mimeType: 'audio/webm;codecs=opus' 
-        };
-        
-        // Check if the mimeType is supported
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            delete options.mimeType; // Use default
-        }
-        
-        mediaRecorder = new MediaRecorder(stream, options);
+        // Use default MediaRecorder
+        mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
 
-        mediaRecorder.ondataavailable = e => {
-            if (e.data.size > 0) {
-                audioChunks.push(e.data);
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
             }
         };
 
@@ -192,8 +199,17 @@ voiceBtn.addEventListener('click', async () => {
             voiceBtn.classList.remove('recording');
             
             try {
-                // Use webm format which is widely supported
+                // Create audio blob
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                console.log('🎵 Audio blob created:', {
+                    size: audioBlob.size,
+                    type: audioBlob.type
+                });
+
+                if (audioBlob.size === 0) {
+                    throw new Error('No audio data recorded');
+                }
+
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'audio.webm');
 
@@ -205,9 +221,7 @@ voiceBtn.addEventListener('click', async () => {
                 
             } catch (error) {
                 console.error('Voice processing error:', error);
-                console.log('Audio blob size:', audioBlob.size);
-                console.log('Audio blob type:', audioBlob.type);
-                addMessage('ai', "Audio processing failed. The file might be in an unsupported format.", 'ai');
+                addMessage('ai', `Audio error: ${error.message}`, 'ai');
             } finally {
                 statusMessage.textContent = "Online";
                 stream.getTracks().forEach(track => track.stop());
@@ -216,17 +230,18 @@ voiceBtn.addEventListener('click', async () => {
 
         mediaRecorder.start();
         
+        // Auto-stop after 5 seconds
         setTimeout(() => {
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 mediaRecorder.stop();
                 voiceBtn.classList.remove('recording');
             }
-        }, 10000);
-        
+        }, 5000);
+
     } catch (error) {
-        console.error('Microphone access error:', error);
+        console.error('Microphone error:', error);
         statusMessage.textContent = "Microphone access denied";
-        addMessage('ai', "Please allow microphone access to use voice features.", 'ai');
+        addMessage('ai', "Please allow microphone access.", 'ai');
     }
 });
 
