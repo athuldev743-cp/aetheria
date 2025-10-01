@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aetheria AI - Advanced Interface</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <i class="fas fa-brain"></i>
+        <h1>Aetheria AI</h1>
+      </div>
+      <div class="status">
+        <span id="ai-status" class="status-indicator online"></span>
+        <span class="status-text" id="status-message">Online</span>
+      </div>
+    </header>
+
+    <main class="chat-area">
+      <div class="sidebar">
+        <h2>Prompt Suggestions</h2>
+        <div class="suggestions">
+          <button class="suggestion-btn" data-prompt="Explain quantum entanglement simply.">Explain quantum entanglement simply.</button>
+          <button class="suggestion-btn" data-prompt="What are the implications of AI ethics?">What are the implications of AI ethics?</button>
+          <button class="suggestion-btn" data-prompt="Summarize the latest breakthroughs in fusion energy.">Summarize latest breakthroughs in fusion energy.</button>
+          <button class="suggestion-btn" data-prompt="Help me brainstorm ideas for a new app.">Help me brainstorm ideas for a new app.</button>
+          <button class="suggestion-btn" data-prompt="Analyze market trends for sustainable tech.">Analyze market trends for sustainable tech.</button>
+        </div>
+
+        <div class="info-section">
+          <h3>System Info</h3>
+          <p>Version: 3.2.1-beta</p>
+          <p>Model: Hyperion-X</p>
+          <p>Uptime: <span id="uptime">Loading...</span></p>
+        </div>
+      </div>
+
+      <div class="chat-window">
+        <div id="chat-display" class="chat-display">
+          <div class="message ai-message">
+            <div class="avatar"><i class="fas fa-robot"></i></div>
+            <div class="message-content">
+              <p>Greetings. I am Aetheria, an advanced cognitive entity. How may I assist you today?</p>
+              <span class="timestamp">Just now</span>
+            </div>
+          </div>
+        </div>
+
+          <div class="input-area">
+  <textarea id="user-input" placeholder="Ask Aetheria anything..."></textarea>
+  <button id="voice-btn" title="Voice Input">
+    <i class="fas fa-microphone"></i>
+  </button>
+  <button id="send-btn" title="Send Message">
+    <i class="fas fa-paper-plane"></i>
+  </button>
+</div>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
