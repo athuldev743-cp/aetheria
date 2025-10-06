@@ -9,11 +9,73 @@ document.addEventListener('DOMContentLoaded', () => {
   const uptimeElement = document.getElementById('uptime');
 
   // --- CONFIG ---
-  const BACKEND_URL = "https://aetheria-backend.onrender.com"; // Backend URL
+  const BACKEND_URL = "https://aetheria-backend.onrender.com";
 
   // --- UTILITY FUNCTIONS ---
   function getTime() {
     return new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true });
+  }
+
+  // Text-to-Speech function
+  function speakText(text) {
+    if ('speechSynthesis' in window) {
+      // Stop any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;    // Speaking rate
+      utterance.pitch = 1.0;   // Pitch
+      utterance.volume = 0.8;  // Volume
+      
+      // Get available voices and prefer English voices
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoice = voices.find(voice => 
+        voice.lang.includes('en') && voice.name.includes('Female')
+      ) || voices.find(voice => voice.lang.includes('en'));
+      
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      }
+      
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } else {
+      console.warn('Text-to-speech not supported in this browser');
+      return false;
+    }
+  }
+
+  // Create voice play button
+  function createVoiceButton(text) {
+    const voiceButton = document.createElement('button');
+    voiceButton.innerHTML = '🔊';
+    voiceButton.title = 'Play message';
+    voiceButton.className = 'voice-play-btn';
+    voiceButton.style.cssText = `
+      margin-left: 10px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+      border-radius: 50%;
+      transition: background 0.2s;
+    `;
+    
+    voiceButton.addEventListener('mouseenter', () => {
+      voiceButton.style.background = 'rgba(0,0,0,0.1)';
+    });
+    
+    voiceButton.addEventListener('mouseleave', () => {
+      voiceButton.style.background = 'none';
+    });
+    
+    voiceButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speakText(text);
+    });
+    
+    return voiceButton;
   }
 
   function addMessage(sender, text, type) {
@@ -26,7 +88,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('message-content');
-    contentDiv.innerHTML = `<p>${text}</p><span class="timestamp">${getTime()}</span>`;
+    
+    // Add voice button for AI messages
+    if (type === 'ai') {
+      const voiceButton = createVoiceButton(text);
+      contentDiv.innerHTML = `<p>${text}</p><span class="timestamp">${getTime()}</span>`;
+      contentDiv.appendChild(voiceButton);
+    } else {
+      contentDiv.innerHTML = `<p>${text}</p><span class="timestamp">${getTime()}</span>`;
+    }
 
     if(type==='user'){ 
       messageDiv.appendChild(contentDiv); 
@@ -38,6 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatDisplay.appendChild(messageDiv);
     scrollToBottom();
+    
+    // Auto-speak AI responses if user sent voice
+    if (type === 'ai' && window.lastInputWasVoice) {
+      setTimeout(() => speakText(text), 500);
+      window.lastInputWasVoice = false;
+    }
   }
 
   function scrollToBottom() { 
@@ -72,68 +148,53 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- AI RESPONSE (BACKEND CALL) ---
-async function getAIResponse(payload, isAudio=false){
+  async function getAIResponse(payload, isAudio=false){
     setAIStatus('thinking','Aetheria is thinking...',true);
     showTypingIndicator();
 
     try {
-        let res;
-        if(isAudio){
-            console.log('🔊 Sending AUDIO request');
-            console.log('Audio payload type:', typeof payload);
-            console.log('Is FormData:', payload instanceof FormData);
-            
-            // Check what's in the FormData
-            if (payload instanceof FormData) {
-                for (let pair of payload.entries()) {
-                    console.log('FormData entry:', pair[0], pair[1]);
-                }
-            }
-            
-            res = await fetch(`${BACKEND_URL}/ai-response`, {
-                method: 'POST',
-                body: payload
-            });
-        } else {
-            const formData = new FormData();
-            formData.append('prompt', payload);
-            console.log('📝 Sending TEXT request - prompt:', payload);
-            
-            res = await fetch(`${BACKEND_URL}/ai-response`, {
-                method: 'POST',
-                body: formData
-            });
-        }
-
-        console.log('Response status:', res.status);
-        console.log('Response headers:', res.headers);
+      let res;
+      if(isAudio){
+        // For audio - already FormData
+        res = await fetch(`${BACKEND_URL}/ai-response`, {
+          method: 'POST',
+          body: payload
+        });
+      } else {
+        // For text - use FormData
+        const formData = new FormData();
+        formData.append('prompt', payload);
         
-        if (!res.ok) {
-            let errorDetail = `HTTP error! status: ${res.status}`;
-            try {
-                const errorData = await res.json();
-                console.log('Error response data:', errorData);
-                errorDetail += ` - ${errorData.detail || JSON.stringify(errorData)}`;
-            } catch (e) {
-                const errorText = await res.text();
-                console.log('Error response text:', errorText);
-                errorDetail += ` - ${errorText}`;
-            }
-            throw new Error(errorDetail);
-        }
+        res = await fetch(`${BACKEND_URL}/ai-response`, {
+          method: 'POST',
+          body: formData
+        });
+      }
 
-        const data = await res.json();
-        removeTypingIndicator();
-        setAIStatus('online','Online',true);
-        return data.response;
+      if (!res.ok) {
+        let errorDetail = `HTTP error! status: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          errorDetail += ` - ${errorData.detail || JSON.stringify(errorData)}`;
+        } catch (e) {
+          const errorText = await res.text();
+          errorDetail += ` - ${errorText}`;
+        }
+        throw new Error(errorDetail);
+      }
+
+      const data = await res.json();
+      removeTypingIndicator();
+      setAIStatus('online','Online',true);
+      return data.response;
 
     } catch(err) {
-        console.error('❌ API Error:', err);
-        removeTypingIndicator();
-        setAIStatus('offline','Backend error',true);
-        return `Error: ${err.message}`;
+      console.error('API Error:', err);
+      removeTypingIndicator();
+      setAIStatus('offline','Backend error',true);
+      return `Error: ${err.message}`;
     }
-}
+  }
 
   // --- SEND TEXT MESSAGE ---
   async function sendMessage() {
@@ -159,91 +220,82 @@ async function getAIResponse(payload, isAudio=false){
       const prompt = button.dataset.prompt;
       addMessage('user', prompt, 'user');
       userInput.value = '';
-      const aiResponse = await getAIResponse(prompt, false); // false = text message
+      const aiResponse = await getAIResponse(prompt, false);
       addMessage('ai', aiResponse, 'ai');
     });
   });
 
   // --- VOICE INPUT (RECORD + SEND) ---
-  // --- VOICE INPUT (RECORD + SEND) ---
-// --- VOICE INPUT (RECORD + SEND) ---
-let mediaRecorder;
-let audioChunks = [];
+  let mediaRecorder;
+  let audioChunks = [];
 
-voiceBtn.addEventListener('click', async () => {
+  voiceBtn.addEventListener('click', async () => {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        voiceBtn.classList.remove('recording');
-        return;
+      mediaRecorder.stop();
+      voiceBtn.classList.remove('recording');
+      statusMessage.textContent = "Processing audio...";
+      return;
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstart = () => {
+        voiceBtn.classList.add('recording');
+        statusMessage.textContent = "Recording... Click to stop";
+      };
+
+      mediaRecorder.onstop = async () => {
+        voiceBtn.classList.remove('recording');
         
-        // Use default MediaRecorder
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
+        try {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'audio.webm');
 
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
-            }
-        };
+          statusMessage.textContent = "Processing audio...";
+          
+          const aiResponse = await getAIResponse(formData, true);
+          addMessage('user', '[Voice Message]', 'user');
+          addMessage('ai', aiResponse, 'ai');
+          
+          // Mark that the last input was voice for auto-speak
+          window.lastInputWasVoice = true;
+          
+        } catch (error) {
+          console.error('Voice processing error:', error);
+          addMessage('ai', `Audio error: ${error.message}`, 'ai');
+        } finally {
+          statusMessage.textContent = "Online";
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
 
-        mediaRecorder.onstart = () => {
-            voiceBtn.classList.add('recording');
-            statusMessage.textContent = "Recording... Click to stop";
-        };
-
-        mediaRecorder.onstop = async () => {
-            voiceBtn.classList.remove('recording');
-            
-            try {
-                // Create audio blob
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                console.log('🎵 Audio blob created:', {
-                    size: audioBlob.size,
-                    type: audioBlob.type
-                });
-
-                if (audioBlob.size === 0) {
-                    throw new Error('No audio data recorded');
-                }
-
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'audio.webm');
-
-                statusMessage.textContent = "Processing audio...";
-                
-                const aiResponse = await getAIResponse(formData, true);
-                addMessage('user', '[Voice Message]', 'user');
-                addMessage('ai', aiResponse, 'ai');
-                
-            } catch (error) {
-                console.error('Voice processing error:', error);
-                addMessage('ai', `Audio error: ${error.message}`, 'ai');
-            } finally {
-                statusMessage.textContent = "Online";
-                stream.getTracks().forEach(track => track.stop());
-            }
-        };
-
-        mediaRecorder.start();
-        
-        // Auto-stop after 5 seconds
-        setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                voiceBtn.classList.remove('recording');
-            }
-        }, 5000);
+      mediaRecorder.start();
+      
+      // Auto-stop after 5 seconds
+      setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          voiceBtn.classList.remove('recording');
+        }
+      }, 5000);
 
     } catch (error) {
-        console.error('Microphone error:', error);
-        statusMessage.textContent = "Microphone access denied";
-        addMessage('ai', "Please allow microphone access.", 'ai');
+      console.error('Microphone error:', error);
+      statusMessage.textContent = "Microphone access denied";
+      addMessage('ai', "Please allow microphone access.", 'ai');
     }
-});
+  });
 
   // --- UPTIME ---
   const startTime = new Date();
@@ -267,4 +319,11 @@ voiceBtn.addEventListener('click', async () => {
     userInput.style.height = 'auto';
     userInput.style.height = userInput.scrollHeight + 'px';
   });
+
+  // Initialize speech synthesis voices
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      console.log('Voices loaded:', window.speechSynthesis.getVoices().length);
+    };
+  }
 });
